@@ -32490,6 +32490,36 @@ class GitHubService {
             yield instance.git.createRef(Object.assign(Object.assign({}, this.client.context.repo), { ref: `refs/tags/${tag}`, sha }));
         });
     }
+    getFileContent(filePath, branch) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const instance = this.getOctokitInstance();
+            try {
+                const response = yield instance.repos.getContent(Object.assign(Object.assign({}, this.client.context.repo), { path: filePath, ref: branch }));
+                if ('content' in response.data) {
+                    return atob(response.data.content);
+                }
+                throw new Error(`File ${filePath} not found or is not a file`);
+            }
+            catch (error) {
+                this.core.info(`Error getting file content for ${filePath}: ${error}`);
+                throw error;
+            }
+        });
+    }
+    updateFile(filePath, content, message, branch, sha) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const instance = this.getOctokitInstance();
+            try {
+                yield instance.repos.createOrUpdateFileContents(Object.assign(Object.assign({}, this.client.context.repo), { path: filePath, message, content: btoa(content), branch,
+                    sha }));
+                this.core.info(`Successfully updated ${filePath}`);
+            }
+            catch (error) {
+                this.core.info(`Error updating file ${filePath}: ${error}`);
+                throw error;
+            }
+        });
+    }
 }
 exports.GitHubService = GitHubService;
 
@@ -32724,7 +32754,7 @@ __exportStar(__nccwpck_require__(1266), exports);
 /***/ }),
 
 /***/ 1266:
-/***/ (function(__unused_webpack_module, exports) {
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
 
@@ -32739,9 +32769,11 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.Release = void 0;
+const version_manager_1 = __nccwpck_require__(4225);
 class Release {
     constructor(github) {
         this.github = github;
+        this.versionManager = new version_manager_1.VersionManagerService();
     }
     test() {
         return __awaiter(this, void 0, void 0, function* () {
@@ -32755,6 +32787,7 @@ class Release {
             this.github.getCore().info('RELEASE HANDLER');
             const branches = yield this.github.getBranches();
             const prefixes = this.github.getPrefixes();
+            yield this.updateVersionFiles(branches, prefixes);
             const sha = yield this.merge(branches);
             yield this.github.delete(branches.current);
             yield this.createTag({ branches, prefixes, sha });
@@ -32779,6 +32812,62 @@ class Release {
     getTagName(currentBranch, releasePrefix, tagPrefix) {
         const branchName = currentBranch.split(releasePrefix).join('');
         return `${tagPrefix}${branchName}`;
+    }
+    updateVersionFiles(branches, prefixes) {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                const version = this.versionManager.extractVersionFromBranch(branches.current, prefixes.release);
+                this.github.getCore().info(`Updating version files to: ${version}`);
+                // Update package.json
+                yield this.updatePackageJson(version, branches.current);
+                // Update mta.yaml (if exists)
+                yield this.updateMtaYaml(version, branches.current);
+                this.github.getCore().info('Version files updated successfully');
+            }
+            catch (error) {
+                this.github.getCore().info(`Error updating version files: ${error}`);
+                throw error;
+            }
+        });
+    }
+    updatePackageJson(version, branch) {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                const content = yield this.github.getFileContent('package.json', branch);
+                const updatedContent = this.versionManager.updatePackageJsonVersion(content, version);
+                // Get current file SHA for updating
+                const fileResponse = yield this.getFileSha('package.json', branch);
+                yield this.github.updateFile('package.json', updatedContent, `chore: update package.json version to ${version}`, branch, fileResponse);
+                this.github.getCore().info(`package.json version updated to: ${version}`);
+            }
+            catch (error) {
+                this.github.getCore().info(`Error updating package.json: ${error}`);
+                throw error;
+            }
+        });
+    }
+    updateMtaYaml(version, branch) {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                const content = yield this.github.getFileContent('mta.yaml', branch);
+                const updatedContent = this.versionManager.updateMtaYamlVersion(content, version);
+                // Get current file SHA for updating
+                const fileResponse = yield this.getFileSha('mta.yaml', branch);
+                yield this.github.updateFile('mta.yaml', updatedContent, `chore: update mta.yaml version to ${version}`, branch, fileResponse);
+                this.github.getCore().info(`mta.yaml version updated to: ${version}`);
+            }
+            catch (error) {
+                this.github.getCore().info(`mta.yaml file not found or error updating: ${error}`);
+                // Don't throw error for mta.yaml as it might not exist in all projects
+            }
+        });
+    }
+    getFileSha(filePath, branch) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const instance = this.github.getOctokitInstance();
+            const response = yield instance.repos.getContent(Object.assign(Object.assign({}, this.github.client.context.repo), { path: filePath, ref: branch }));
+            return response.data.sha;
+        });
     }
 }
 exports.Release = Release;
@@ -32815,6 +32904,48 @@ class GitFlowService {
     }
 }
 exports.GitFlowService = GitFlowService;
+
+
+/***/ }),
+
+/***/ 4225:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.VersionManagerService = void 0;
+class VersionManagerService {
+    extractVersionFromBranch(branchName, releasePrefix) {
+        const versionRegex = new RegExp(`^${releasePrefix.replace('/', '\\/')}([0-9]+\\.[0-9]+\\.[0-9]+)$`);
+        const match = branchName.match(versionRegex);
+        if (!match) {
+            throw new Error(`Branch name ${branchName} does not match release pattern`);
+        }
+        return match[1];
+    }
+    updatePackageJsonVersion(content, version) {
+        try {
+            const packageJson = JSON.parse(content);
+            packageJson.version = version;
+            return JSON.stringify(packageJson, null, 2);
+        }
+        catch (error) {
+            throw new Error(`Failed to update package.json version: ${error}`);
+        }
+    }
+    updateMtaYamlVersion(content, version) {
+        try {
+            // Update version in YAML format
+            const versionRegex = /^version:\s*.*/gm;
+            return content.replace(versionRegex, `version: ${version}`);
+        }
+        catch (error) {
+            throw new Error(`Failed to update mta.yaml version: ${error}`);
+        }
+    }
+}
+exports.VersionManagerService = VersionManagerService;
 
 
 /***/ }),
