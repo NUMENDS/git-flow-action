@@ -112,4 +112,47 @@ export class GitHubService implements GitHub {
             sha,
         });
     }
+
+    public async getFileContent(filePath: string, branch: string): Promise<string> {
+        const instance = this.getOctokitInstance();
+        try {
+            const response = await instance.repos.getContent({
+                ...this.client.context.repo,
+                path: filePath,
+                ref: branch,
+            });
+
+            if ('content' in response.data) {
+                return atob(response.data.content);
+            }
+            throw new Error(`File ${filePath} not found or is not a file`);
+        } catch (error) {
+            this.core.info(`Error getting file content for ${filePath}: ${error}`);
+            throw error;
+        }
+    }
+
+    public async updateFile(
+        filePath: string,
+        content: string,
+        message: string,
+        branch: string,
+        sha: string,
+    ): Promise<void> {
+        const instance = this.getOctokitInstance();
+        try {
+            await instance.repos.createOrUpdateFileContents({
+                ...this.client.context.repo,
+                path: filePath,
+                message,
+                content: btoa(content),
+                branch,
+                sha,
+            });
+            this.core.info(`Successfully updated ${filePath}`);
+        } catch (error) {
+            this.core.info(`Error updating file ${filePath}: ${error}`);
+            throw error;
+        }
+    }
 }

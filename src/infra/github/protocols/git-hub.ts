@@ -9,4 +9,12 @@ export interface GitHub {
     merge(fromBranch: string, toBranch: string): Promise<string>;
     delete(currentBranch: string): Promise<void>;
     createTag(tag: string, sha: string): Promise<void>;
+    getFileContent(filePath: string, branch: string): Promise<string>;
+    updateFile(
+        filePath: string,
+        content: string,
+        message: string,
+        branch: string,
+        sha: string
+    ): Promise<void>;
 }
