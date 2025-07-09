@@ -1,8 +1,9 @@
 name: Gitflow CI
 
 on: 
-  pull_request_review:
-    branches: ['main', 'development']
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main, develop]
 
 jobs:
   build:
