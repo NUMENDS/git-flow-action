@@ -32758,6 +32758,25 @@ __exportStar(__nccwpck_require__(1266), exports);
 
 "use strict";
 
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    Object.defineProperty(o, k2, { enumerable: true, get: function() { return m[k]; } });
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+};
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
     return new (P || (P = Promise))(function (resolve, reject) {
@@ -32769,9 +32788,9 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.Release = void 0;
-const version_manager_1 = __nccwpck_require__(4225);
 class Release {
     constructor(github) {
+        this.releaseFilePath = '';
         this.github = github;
         this.versionManager = new version_manager_1.VersionManagerService();
     }
@@ -32787,10 +32806,13 @@ class Release {
             this.github.getCore().info('RELEASE HANDLER');
             const branches = yield this.github.getBranches();
             const prefixes = this.github.getPrefixes();
-            yield this.updateVersionFiles(branches, prefixes);
             const sha = yield this.merge(branches);
+            // Delete release branch
             yield this.github.delete(branches.current);
+            // Create tag
             yield this.createTag({ branches, prefixes, sha });
+            // Create GitHub release
+            yield this.createGitHubRelease(version, projectName);
             return sha;
         });
     }
@@ -32812,62 +32834,6 @@ class Release {
     getTagName(currentBranch, releasePrefix, tagPrefix) {
         const branchName = currentBranch.split(releasePrefix).join('');
         return `${tagPrefix}${branchName}`;
-    }
-    updateVersionFiles(branches, prefixes) {
-        return __awaiter(this, void 0, void 0, function* () {
-            try {
-                const version = this.versionManager.extractVersionFromBranch(branches.current, prefixes.release);
-                this.github.getCore().info(`Updating version files to: ${version}`);
-                // Update package.json
-                yield this.updatePackageJson(version, branches.current);
-                // Update mta.yaml (if exists)
-                yield this.updateMtaYaml(version, branches.current);
-                this.github.getCore().info('Version files updated successfully');
-            }
-            catch (error) {
-                this.github.getCore().info(`Error updating version files: ${error}`);
-                throw error;
-            }
-        });
-    }
-    updatePackageJson(version, branch) {
-        return __awaiter(this, void 0, void 0, function* () {
-            try {
-                const content = yield this.github.getFileContent('package.json', branch);
-                const updatedContent = this.versionManager.updatePackageJsonVersion(content, version);
-                // Get current file SHA for updating
-                const fileResponse = yield this.getFileSha('package.json', branch);
-                yield this.github.updateFile('package.json', updatedContent, `chore: update package.json version to ${version}`, branch, fileResponse);
-                this.github.getCore().info(`package.json version updated to: ${version}`);
-            }
-            catch (error) {
-                this.github.getCore().info(`Error updating package.json: ${error}`);
-                throw error;
-            }
-        });
-    }
-    updateMtaYaml(version, branch) {
-        return __awaiter(this, void 0, void 0, function* () {
-            try {
-                const content = yield this.github.getFileContent('mta.yaml', branch);
-                const updatedContent = this.versionManager.updateMtaYamlVersion(content, version);
-                // Get current file SHA for updating
-                const fileResponse = yield this.getFileSha('mta.yaml', branch);
-                yield this.github.updateFile('mta.yaml', updatedContent, `chore: update mta.yaml version to ${version}`, branch, fileResponse);
-                this.github.getCore().info(`mta.yaml version updated to: ${version}`);
-            }
-            catch (error) {
-                this.github.getCore().info(`mta.yaml file not found or error updating: ${error}`);
-                // Don't throw error for mta.yaml as it might not exist in all projects
-            }
-        });
-    }
-    getFileSha(filePath, branch) {
-        return __awaiter(this, void 0, void 0, function* () {
-            const instance = this.github.getOctokitInstance();
-            const response = yield instance.repos.getContent(Object.assign(Object.assign({}, this.github.client.context.repo), { path: filePath, ref: branch }));
-            return response.data.sha;
-        });
     }
 }
 exports.Release = Release;
@@ -32979,6 +32945,14 @@ module.exports = require("async_hooks");
 
 "use strict";
 module.exports = require("buffer");
+
+/***/ }),
+
+/***/ 2081:
+/***/ ((module) => {
+
+"use strict";
+module.exports = require("child_process");
 
 /***/ }),
 
