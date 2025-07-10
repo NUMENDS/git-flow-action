@@ -196,47 +196,65 @@ export class Release implements GitFlowHandler {
             this.github.getCore().info('Building project...');
             await this.runBuild();
 
-            // Verify build files exist
-            const buildFile = path.join(process.cwd(), 'lib', 'main', 'index.js');
-            if (!fs.existsSync(buildFile)) {
-                throw new Error('Build files not found after build');
-            }
-
-            // Check for MTAR file (if project uses SAP BTP deployment)
+            // Check if this is an MTA project (has mta.yaml file)
+            const mtaYamlExists = fs.existsSync(path.join(process.cwd(), 'mta.yaml'));
             let mtarFilePath = '';
+            const isMtaProject = mtaYamlExists;
 
-            try {
-                const mtarArchivesPath = path.join(process.cwd(), 'mta_archives');
+            if (isMtaProject) {
+                this.github.getCore().info('MTA project detected, looking for MTAR file...');
 
-                // Check if mta_archives directory exists
-                if (fs.existsSync(mtarArchivesPath)) {
-                    // Look for any .mtar file in the directory
-                    const mtarFiles = fs.readdirSync(mtarArchivesPath)
-                        .filter(file => file.endsWith('.mtar'));
+                try {
+                    const mtarArchivesPath = path.join(process.cwd(), 'mta_archives');
 
-                    if (mtarFiles.length > 0) {
-                        this.github.getCore().info('MTAR file found! Processing...');
+                    // Check if mta_archives directory exists
+                    if (fs.existsSync(mtarArchivesPath)) {
+                        // Look for any .mtar file in the directory
+                        const mtarFiles = fs.readdirSync(mtarArchivesPath)
+                            .filter(file => file.endsWith('.mtar'));
 
-                        // Use the first .mtar file found
-                        const originalMtarFile = path.join(mtarArchivesPath, mtarFiles[0]);
-                        const versionedMtarFile = path.join(
-                            mtarArchivesPath,
-                            `${projectName}-v${version}.mtar`,
-                        );
+                        if (mtarFiles.length > 0) {
+                            this.github.getCore().info('MTAR file found! Processing...');
 
-                        // Rename MTAR file to include version
-                        fs.renameSync(originalMtarFile, versionedMtarFile);
+                            // Use the first .mtar file found
+                            const originalMtarFile = path.join(mtarArchivesPath, mtarFiles[0]);
+                            const versionedMtarFile = path.join(
+                                mtarArchivesPath,
+                                `${projectName}-v${version}.mtar`,
+                            );
 
-                        this.github.getCore().info(`Renamed to ${projectName}-v${version}.mtar`);
-                        mtarFilePath = versionedMtarFile;
+                            // Rename MTAR file to include version
+                            fs.renameSync(originalMtarFile, versionedMtarFile);
+
+                            this.github.getCore().info(
+                                `Renamed to ${projectName}-v${version}.mtar`,
+                            );
+                            mtarFilePath = versionedMtarFile;
+                        } else {
+                            throw new Error(
+                                'MTA project detected but no MTAR files found in mta_archives ' +
+                                'directory. Build may have failed.',
+                            );
+                        }
                     } else {
-                        this.github.getCore().info('No MTAR files found in mta_archives directory');
+                        throw new Error(
+                            'MTA project detected but mta_archives directory not found. ' +
+                            'Build may have failed.',
+                        );
                     }
-                } else {
-                    this.github.getCore().info('No mta_archives directory found');
+                } catch (error) {
+                    this.github.getCore().info(`Error processing MTAR file: ${error}`);
+                    throw error;
                 }
-            } catch (error) {
-                this.github.getCore().info(`Error processing MTAR file: ${error}`);
+            } else {
+                // For non-MTA projects, verify standard build files exist
+                this.github.getCore().info('Standard project detected, verifying build files...');
+                const buildFile = path.join(process.cwd(), 'lib', 'main', 'index.js');
+                if (!fs.existsSync(buildFile)) {
+                    throw new Error(
+                        'Build files not found after build. Expected lib/main/index.js',
+                    );
+                }
             }
 
             // If no MTAR file was processed, create standard package
