@@ -341,15 +341,28 @@ ${newEntry}${existingContent}`;
 
             // Commit changelog if we're in a git repository
             if (fs.existsSync('.git')) {
-                execSync('git add CHANGELOG.md', { stdio: 'inherit' });
-                execSync(`git commit -m "docs: update changelog for version ${version}"`,
-                    { stdio: 'inherit' });
+                try {
+                    // Configure git user for GitHub Actions
+                    execSync('git config user.name "GitHub Actions"', { stdio: 'inherit' });
+                    execSync('git config user.email "actions@github.com"', { stdio: 'inherit' });
+
+                    execSync('git add CHANGELOG.md', { stdio: 'inherit' });
+                    execSync(`git commit -m "docs: update changelog for version ${version}"`,
+                        { stdio: 'inherit' });
+
+                    this.github.getCore().info('Changelog committed successfully');
+                } catch (commitError) {
+                    this.github.getCore().info(
+                        `Could not commit changelog: ${commitError}. Continuing...`,
+                    );
+                }
             }
 
             this.github.getCore().info('Changelog updated successfully');
         } catch (error) {
             this.github.getCore().info(`Error updating changelog: ${error}`);
-            throw error;
+            // Don't throw error for changelog issues, continue with release process
+            this.github.getCore().info('Continuing with release process...');
         }
     }
 
