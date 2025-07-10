@@ -33135,30 +33135,37 @@ ${prInfo.url ? `[🔎 See PR](${prInfo.url})` : ''}`, draft: false, prerelease: 
     }
     getPRInfo(branch) {
         return __awaiter(this, void 0, void 0, function* () {
-            try {
-                const instance = this.github.getOctokitInstance();
-                const context = this.github.client.context;
-                this.github.getCore().info(`Attempting to fetch PR info for branch: ${branch}`);
-                // Try to find PR for the branch with timeout
-                const prs = yield Promise.race([
-                    instance.pulls.list(Object.assign(Object.assign({}, context.repo), { head: `${context.repo.owner}:${branch}`, state: 'all' })),
-                    new Promise((_, reject) => setTimeout(() => reject(new Error('PR fetch timeout')), 10000)),
-                ]);
-                if (prs.data && prs.data.length > 0) {
-                    const pr = prs.data[0];
-                    this.github.getCore().info(`Found PR #${pr.number}: ${pr.title}`);
-                    return {
-                        body: pr.body || '',
-                        url: pr.html_url,
-                    };
+            const instance = this.github.getOctokitInstance();
+            const context = this.github.client.context;
+            this.github.getCore().info(`Searching for PR: ${branch}`);
+            // Try different branch formats for PR search
+            const branchFormats = [
+                branch,
+                branch.replace(/^release\//, ''),
+                `${context.repo.owner}:${branch}`,
+            ];
+            for (const branchFormat of branchFormats) {
+                try {
+                    const prs = yield instance.pulls.list(Object.assign(Object.assign({}, context.repo), { head: branchFormat, state: 'all' }));
+                    if (prs.data && prs.data.length > 0) {
+                        const pr = prs.data[0];
+                        this.github.getCore().info(`✅ Found PR #${pr.number}: ${pr.title}`);
+                        return {
+                            body: pr.body || '',
+                            url: pr.html_url,
+                        };
+                    }
                 }
-                // No PR found - throw error
-                throw new Error(`No PR found for branch ${branch}`);
+                catch (error) {
+                    // Continue to next format
+                    continue;
+                }
             }
-            catch (error) {
-                this.github.getCore().info(`Failed to fetch PR info: ${error}`);
-                throw new Error(`Could not access PR information for branch ${branch}: ${error}`);
-            }
+            // No PR found with any format
+            this.github.getCore().info(`❌ No PR found for branch: ${branch}`);
+            this.github.getCore().info(`Repository: ${context.repo.owner}/${context.repo.repo}`);
+            this.github.getCore().info('Please ensure a Pull Request exists for this release branch');
+            throw new Error(`No Pull Request found for release branch '${branch}'`);
         });
     }
     getFileSha(filePath, branch) {
