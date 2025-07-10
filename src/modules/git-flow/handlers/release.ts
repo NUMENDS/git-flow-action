@@ -439,25 +439,34 @@ ${prInfo.url ? `[🔎 See PR](${prInfo.url})` : ''}`,
             const instance = (this.github as any).getOctokitInstance();
             const context = (this.github as any).client.context;
 
-            // Try to find PR for the branch
-            const prs = await instance.pulls.list({
-                ...context.repo,
-                head: `${context.repo.owner}:${branch}`,
-                state: 'all',
-            });
+            this.github.getCore().info(`Attempting to fetch PR info for branch: ${branch}`);
 
-            if (prs.data.length > 0) {
+            // Try to find PR for the branch with timeout
+            const prs = await Promise.race([
+                instance.pulls.list({
+                    ...context.repo,
+                    head: `${context.repo.owner}:${branch}`,
+                    state: 'all',
+                }),
+                new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('PR fetch timeout')), 10000),
+                ),
+            ]);
+
+            if (prs.data && prs.data.length > 0) {
                 const pr = prs.data[0];
+                this.github.getCore().info(`Found PR #${pr.number}: ${pr.title}`);
                 return {
                     body: pr.body || '',
                     url: pr.html_url,
                 };
             }
 
-            return { body: '', url: '' };
+            // No PR found - throw error
+            throw new Error(`No PR found for branch ${branch}`);
         } catch (error) {
-            this.github.getCore().info(`Could not fetch PR info: ${error}`);
-            return { body: '', url: '' };
+            this.github.getCore().info(`Failed to fetch PR info: ${error}`);
+            throw new Error(`Could not access PR information for branch ${branch}: ${error}`);
         }
     }
 
