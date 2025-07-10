@@ -32490,6 +32490,36 @@ class GitHubService {
             yield instance.git.createRef(Object.assign(Object.assign({}, this.client.context.repo), { ref: `refs/tags/${tag}`, sha }));
         });
     }
+    getFileContent(filePath, branch) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const instance = this.getOctokitInstance();
+            try {
+                const response = yield instance.repos.getContent(Object.assign(Object.assign({}, this.client.context.repo), { path: filePath, ref: branch }));
+                if ('content' in response.data) {
+                    return atob(response.data.content);
+                }
+                throw new Error(`File ${filePath} not found or is not a file`);
+            }
+            catch (error) {
+                this.core.info(`Error getting file content for ${filePath}: ${error}`);
+                throw error;
+            }
+        });
+    }
+    updateFile(filePath, content, message, branch, sha) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const instance = this.getOctokitInstance();
+            try {
+                yield instance.repos.createOrUpdateFileContents(Object.assign(Object.assign({}, this.client.context.repo), { path: filePath, message, content: btoa(content), branch,
+                    sha }));
+                this.core.info(`Successfully updated ${filePath}`);
+            }
+            catch (error) {
+                this.core.info(`Error updating file ${filePath}: ${error}`);
+                throw error;
+            }
+        });
+    }
 }
 exports.GitHubService = GitHubService;
 
@@ -32724,10 +32754,29 @@ __exportStar(__nccwpck_require__(1266), exports);
 /***/ }),
 
 /***/ 1266:
-/***/ (function(__unused_webpack_module, exports) {
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
 
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    Object.defineProperty(o, k2, { enumerable: true, get: function() { return m[k]; } });
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+};
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
     return new (P || (P = Promise))(function (resolve, reject) {
@@ -32739,9 +32788,15 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.Release = void 0;
+const version_manager_1 = __nccwpck_require__(4225);
+const child_process_1 = __nccwpck_require__(2081);
+const fs = __importStar(__nccwpck_require__(7147));
+const path = __importStar(__nccwpck_require__(1017));
 class Release {
     constructor(github) {
+        this.releaseFilePath = '';
         this.github = github;
+        this.versionManager = new version_manager_1.VersionManagerService();
     }
     test() {
         return __awaiter(this, void 0, void 0, function* () {
@@ -32755,9 +32810,30 @@ class Release {
             this.github.getCore().info('RELEASE HANDLER');
             const branches = yield this.github.getBranches();
             const prefixes = this.github.getPrefixes();
+            // Extract version from branch name
+            const version = this.versionManager.extractVersionFromBranch(branches.current, prefixes.release);
+            // Get project name from package.json
+            const packageJsonPath = path.join(process.cwd(), 'package.json');
+            let projectName = 'unknown-project';
+            if (fs.existsSync(packageJsonPath)) {
+                const packageContent = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+                projectName = packageContent.name || 'unknown-project';
+                this.github.getCore().info(`Project name: ${projectName}`);
+            }
+            // Update version files
+            yield this.updateVersionFiles(branches, prefixes);
+            // Build the project
+            yield this.buildProject(version, projectName);
+            // Create or update changelog
+            yield this.createOrUpdateChangelog(version, branches.current);
+            // Merge branches
             const sha = yield this.merge(branches);
+            // Delete release branch
             yield this.github.delete(branches.current);
+            // Create tag
             yield this.createTag({ branches, prefixes, sha });
+            // Create GitHub release
+            yield this.createGitHubRelease(version, projectName);
             return sha;
         });
     }
@@ -32779,6 +32855,260 @@ class Release {
     getTagName(currentBranch, releasePrefix, tagPrefix) {
         const branchName = currentBranch.split(releasePrefix).join('');
         return `${tagPrefix}${branchName}`;
+    }
+    updateVersionFiles(branches, prefixes) {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                const version = this.versionManager.extractVersionFromBranch(branches.current, prefixes.release);
+                this.github.getCore().info(`Updating version files to: ${version}`);
+                // Update package.json
+                yield this.updatePackageJson(version, branches.current);
+                // Update mta.yaml (if exists)
+                yield this.updateMtaYaml(version, branches.current);
+                this.github.getCore().info('Version files updated successfully');
+            }
+            catch (error) {
+                this.github.getCore().info(`Error updating version files: ${error}`);
+                throw error;
+            }
+        });
+    }
+    updatePackageJson(version, branch) {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                const content = yield this.github.getFileContent('package.json', branch);
+                const updatedContent = this.versionManager.updatePackageJsonVersion(content, version);
+                // Get current file SHA for updating
+                const fileResponse = yield this.getFileSha('package.json', branch);
+                yield this.github.updateFile('package.json', updatedContent, `chore: update package.json version to ${version}`, branch, fileResponse);
+                this.github.getCore().info(`package.json version updated to: ${version}`);
+            }
+            catch (error) {
+                this.github.getCore().info(`Error updating package.json: ${error}`);
+                throw error;
+            }
+        });
+    }
+    updateMtaYaml(version, branch) {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                const content = yield this.github.getFileContent('mta.yaml', branch);
+                const updatedContent = this.versionManager.updateMtaYamlVersion(content, version);
+                // Get current file SHA for updating
+                const fileResponse = yield this.getFileSha('mta.yaml', branch);
+                yield this.github.updateFile('mta.yaml', updatedContent, `chore: update mta.yaml version to ${version}`, branch, fileResponse);
+                this.github.getCore().info(`mta.yaml version updated to: ${version}`);
+            }
+            catch (error) {
+                this.github.getCore().info(`mta.yaml file not found or error updating: ${error}`);
+                // Don't throw error for mta.yaml as it might not exist in all projects
+            }
+        });
+    }
+    buildProject(version, projectName) {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                this.github.getCore().info(`Building project for version ${version}`);
+                // Install dependencies
+                this.github.getCore().info('Installing dependencies...');
+                child_process_1.execSync('npm ci', { stdio: 'inherit' });
+                // Build the project
+                this.github.getCore().info('Building project...');
+                child_process_1.execSync('npm run build', { stdio: 'inherit' });
+                // Verify build files exist
+                const buildFile = path.join(process.cwd(), 'lib', 'main', 'index.js');
+                if (!fs.existsSync(buildFile)) {
+                    throw new Error('Build files not found after build');
+                }
+                // Check for MTAR file (if project uses SAP BTP deployment)
+                let mtarFilePath = '';
+                try {
+                    const mtarArchivesPath = path.join(process.cwd(), 'mta_archives');
+                    // Check if mta_archives directory exists
+                    if (fs.existsSync(mtarArchivesPath)) {
+                        // Look for any .mtar file in the directory
+                        const mtarFiles = fs.readdirSync(mtarArchivesPath)
+                            .filter(file => file.endsWith('.mtar'));
+                        if (mtarFiles.length > 0) {
+                            this.github.getCore().info('MTAR file found! Processing...');
+                            // Use the first .mtar file found
+                            const originalMtarFile = path.join(mtarArchivesPath, mtarFiles[0]);
+                            const versionedMtarFile = path.join(mtarArchivesPath, `${projectName}-v${version}.mtar`);
+                            // Rename MTAR file to include version
+                            fs.renameSync(originalMtarFile, versionedMtarFile);
+                            this.github.getCore().info(`Renamed to ${projectName}-v${version}.mtar`);
+                            mtarFilePath = versionedMtarFile;
+                        }
+                        else {
+                            this.github.getCore().info('No MTAR files found in mta_archives directory');
+                        }
+                    }
+                    else {
+                        this.github.getCore().info('No mta_archives directory found');
+                    }
+                }
+                catch (error) {
+                    this.github.getCore().info(`Error processing MTAR file: ${error}`);
+                }
+                // If no MTAR file was processed, create standard package
+                if (!mtarFilePath) {
+                    this.github.getCore().info('Creating standard package...');
+                    // Create release package (standard GitHub Action)
+                    const releaseFileName = `${projectName}-v${version}.zip`;
+                    const filesToPackage = [
+                        'lib/',
+                        'action.yml',
+                        'package.json',
+                        'README.md',
+                        'LICENSE',
+                    ];
+                    // Create zip file with build artifacts
+                    child_process_1.execSync(`zip -r ${releaseFileName} ${filesToPackage.join(' ')}`, { stdio: 'inherit' });
+                    this.github.getCore().info(`Build successful! Created ${releaseFileName}`);
+                    mtarFilePath = releaseFileName;
+                }
+                // Store the file path for later use in GitHub release
+                this.releaseFilePath = mtarFilePath;
+            }
+            catch (error) {
+                this.github.getCore().info(`Build failed: ${error}`);
+                throw error;
+            }
+        });
+    }
+    createOrUpdateChangelog(version, branch) {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                this.github.getCore().info(`Creating/updating changelog for version ${version}`);
+                const changelogPath = path.join(process.cwd(), 'CHANGELOG.md');
+                // Get PR information (if available from context)
+                const prInfo = yield this.getPRInfo(branch);
+                // Create new changelog entry
+                const newEntry = `# V${version}
+
+This release includes:
+
+${prInfo.body || 'Release updates and improvements'}
+
+${prInfo.url ? `[🔎 See PR](${prInfo.url})` : ''}
+
+---
+
+`;
+                let existingContent = '';
+                if (fs.existsSync(changelogPath)) {
+                    existingContent = fs.readFileSync(changelogPath, 'utf8');
+                }
+                // Create new changelog content
+                let newContent = '';
+                if (existingContent.includes('# Changelog')) {
+                    // Replace existing changelog
+                    const lines = existingContent.split('\n');
+                    const headerEndIndex = lines.findIndex((line, index) => index > 0 && line.trim() !== '' && !line.startsWith('#'));
+                    const header = lines.slice(0, headerEndIndex > 0 ? headerEndIndex : 4).join('\n');
+                    const existingEntries = lines.slice(headerEndIndex > 0 ? headerEndIndex : 4).join('\n');
+                    newContent = `${header}\n\n${newEntry}${existingEntries}`;
+                }
+                else {
+                    // Create new changelog
+                    newContent = `# Changelog
+
+All notable changes to this project will be documented in this file.
+
+${newEntry}${existingContent}`;
+                }
+                // Write updated changelog
+                fs.writeFileSync(changelogPath, newContent, 'utf8');
+                // Commit changelog if we're in a git repository
+                if (fs.existsSync('.git')) {
+                    child_process_1.execSync('git add CHANGELOG.md', { stdio: 'inherit' });
+                    child_process_1.execSync(`git commit -m "docs: update changelog for version ${version}"`, { stdio: 'inherit' });
+                }
+                this.github.getCore().info('Changelog updated successfully');
+            }
+            catch (error) {
+                this.github.getCore().info(`Error updating changelog: ${error}`);
+                throw error;
+            }
+        });
+    }
+    createGitHubRelease(version, projectName) {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                this.github.getCore().info(`Creating GitHub release for version ${version}`);
+                const instance = this.github.getOctokitInstance();
+                const context = this.github.client.context;
+                // Get PR information
+                const prInfo = yield this.getPRInfo(`release/${version}`);
+                // Create release
+                const releaseResponse = yield instance.repos.createRelease(Object.assign(Object.assign({}, context.repo), { tag_name: `v${version}`, name: `Release v${version}`, body: `## 🚀 New Release v${version}
+
+This release includes:
+
+${prInfo.body || 'Release updates and improvements'}
+
+## 📦 Assets
+
+- \`${projectName}-v${version}.mtar\` - Complete package ready for deployment
+- \`${projectName}-v${version}.zip\` - Complete package ready for use
+
+## 🔧 Usage
+
+You can use this action in your workflows:
+
+\`\`\`yaml
+- name: Run Git Flow
+  uses: ${context.repo.owner}/${context.repo.repo}@v${version}
+  with:
+    github_token: \${{ secrets.GITHUB_TOKEN }}
+    master_branch: 'main'
+    development_branch: 'development'
+\`\`\`
+
+${prInfo.url ? `[🔎 See PR](${prInfo.url})` : ''}`, draft: false, prerelease: false }));
+                // Upload release asset
+                if (this.releaseFilePath && fs.existsSync(this.releaseFilePath)) {
+                    const assetData = fs.readFileSync(this.releaseFilePath);
+                    const fileName = path.basename(this.releaseFilePath);
+                    yield instance.repos.uploadReleaseAsset(Object.assign(Object.assign({}, context.repo), { release_id: releaseResponse.data.id, name: fileName, data: assetData }));
+                    this.github.getCore().info(`Asset uploaded: ${fileName}`);
+                }
+                this.github.getCore().info(`GitHub release created successfully: ${releaseResponse.data.html_url}`);
+            }
+            catch (error) {
+                this.github.getCore().info(`Error creating GitHub release: ${error}`);
+                throw error;
+            }
+        });
+    }
+    getPRInfo(branch) {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                const instance = this.github.getOctokitInstance();
+                const context = this.github.client.context;
+                // Try to find PR for the branch
+                const prs = yield instance.pulls.list(Object.assign(Object.assign({}, context.repo), { head: `${context.repo.owner}:${branch}`, state: 'all' }));
+                if (prs.data.length > 0) {
+                    const pr = prs.data[0];
+                    return {
+                        body: pr.body || '',
+                        url: pr.html_url,
+                    };
+                }
+                return { body: '', url: '' };
+            }
+            catch (error) {
+                this.github.getCore().info(`Could not fetch PR info: ${error}`);
+                return { body: '', url: '' };
+            }
+        });
+    }
+    getFileSha(filePath, branch) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const instance = this.github.getOctokitInstance();
+            const response = yield instance.repos.getContent(Object.assign(Object.assign({}, this.github.client.context.repo), { path: filePath, ref: branch }));
+            return response.data.sha;
+        });
     }
 }
 exports.Release = Release;
@@ -32819,6 +33149,48 @@ exports.GitFlowService = GitFlowService;
 
 /***/ }),
 
+/***/ 4225:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.VersionManagerService = void 0;
+class VersionManagerService {
+    extractVersionFromBranch(branchName, releasePrefix) {
+        const versionRegex = new RegExp(`^${releasePrefix.replace('/', '\\/')}([0-9]+\\.[0-9]+\\.[0-9]+)$`);
+        const match = branchName.match(versionRegex);
+        if (!match) {
+            throw new Error(`Branch name ${branchName} does not match release pattern`);
+        }
+        return match[1];
+    }
+    updatePackageJsonVersion(content, version) {
+        try {
+            const packageJson = JSON.parse(content);
+            packageJson.version = version;
+            return JSON.stringify(packageJson, null, 2);
+        }
+        catch (error) {
+            throw new Error(`Failed to update package.json version: ${error}`);
+        }
+    }
+    updateMtaYamlVersion(content, version) {
+        try {
+            // Update version in YAML format
+            const versionRegex = /^version:\s*.*/gm;
+            return content.replace(versionRegex, `version: ${version}`);
+        }
+        catch (error) {
+            throw new Error(`Failed to update mta.yaml version: ${error}`);
+        }
+    }
+}
+exports.VersionManagerService = VersionManagerService;
+
+
+/***/ }),
+
 /***/ 2877:
 /***/ ((module) => {
 
@@ -32848,6 +33220,14 @@ module.exports = require("async_hooks");
 
 "use strict";
 module.exports = require("buffer");
+
+/***/ }),
+
+/***/ 2081:
+/***/ ((module) => {
+
+"use strict";
+module.exports = require("child_process");
 
 /***/ }),
 
