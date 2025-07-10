@@ -156,17 +156,45 @@ export class Release implements GitFlowHandler {
         }
     }
 
+    private async installDependencies(): Promise<void> {
+        const packageLockExists = fs.existsSync(path.join(process.cwd(), 'package-lock.json'));
+        const yarnLockExists = fs.existsSync(path.join(process.cwd(), 'yarn.lock'));
+
+        if (packageLockExists) {
+            this.github.getCore().info('Found package-lock.json, using npm ci');
+            execSync('npm ci', { stdio: 'inherit' });
+        } else if (yarnLockExists) {
+            this.github.getCore().info('Found yarn.lock, using yarn install --frozen-lockfile');
+            execSync('yarn install --frozen-lockfile', { stdio: 'inherit' });
+        } else {
+            this.github.getCore().info('No lock file found, using npm install');
+            execSync('npm install', { stdio: 'inherit' });
+        }
+    }
+
+    private async runBuild(): Promise<void> {
+        const yarnLockExists = fs.existsSync(path.join(process.cwd(), 'yarn.lock'));
+
+        if (yarnLockExists) {
+            this.github.getCore().info('Using yarn build');
+            execSync('yarn build', { stdio: 'inherit' });
+        } else {
+            this.github.getCore().info('Using npm run build');
+            execSync('npm run build', { stdio: 'inherit' });
+        }
+    }
+
     private async buildProject(version: string, projectName: string): Promise<void> {
         try {
             this.github.getCore().info(`Building project for version ${version}`);
 
             // Install dependencies
             this.github.getCore().info('Installing dependencies...');
-            execSync('npm ci', { stdio: 'inherit' });
+            await this.installDependencies();
 
             // Build the project
             this.github.getCore().info('Building project...');
-            execSync('npm run build', { stdio: 'inherit' });
+            await this.runBuild();
 
             // Verify build files exist
             const buildFile = path.join(process.cwd(), 'lib', 'main', 'index.js');

@@ -32905,16 +32905,47 @@ class Release {
             }
         });
     }
+    installDependencies() {
+        return __awaiter(this, void 0, void 0, function* () {
+            const packageLockExists = fs.existsSync(path.join(process.cwd(), 'package-lock.json'));
+            const yarnLockExists = fs.existsSync(path.join(process.cwd(), 'yarn.lock'));
+            if (packageLockExists) {
+                this.github.getCore().info('Found package-lock.json, using npm ci');
+                child_process_1.execSync('npm ci', { stdio: 'inherit' });
+            }
+            else if (yarnLockExists) {
+                this.github.getCore().info('Found yarn.lock, using yarn install --frozen-lockfile');
+                child_process_1.execSync('yarn install --frozen-lockfile', { stdio: 'inherit' });
+            }
+            else {
+                this.github.getCore().info('No lock file found, using npm install');
+                child_process_1.execSync('npm install', { stdio: 'inherit' });
+            }
+        });
+    }
+    runBuild() {
+        return __awaiter(this, void 0, void 0, function* () {
+            const yarnLockExists = fs.existsSync(path.join(process.cwd(), 'yarn.lock'));
+            if (yarnLockExists) {
+                this.github.getCore().info('Using yarn build');
+                child_process_1.execSync('yarn build', { stdio: 'inherit' });
+            }
+            else {
+                this.github.getCore().info('Using npm run build');
+                child_process_1.execSync('npm run build', { stdio: 'inherit' });
+            }
+        });
+    }
     buildProject(version, projectName) {
         return __awaiter(this, void 0, void 0, function* () {
             try {
                 this.github.getCore().info(`Building project for version ${version}`);
                 // Install dependencies
                 this.github.getCore().info('Installing dependencies...');
-                child_process_1.execSync('npm ci', { stdio: 'inherit' });
+                yield this.installDependencies();
                 // Build the project
                 this.github.getCore().info('Building project...');
-                child_process_1.execSync('npm run build', { stdio: 'inherit' });
+                yield this.runBuild();
                 // Verify build files exist
                 const buildFile = path.join(process.cwd(), 'lib', 'main', 'index.js');
                 if (!fs.existsSync(buildFile)) {
