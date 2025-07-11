@@ -32828,12 +32828,12 @@ class Release {
             yield this.createOrUpdateChangelog(version, branches.current);
             // Merge branches
             const sha = yield this.merge(branches);
-            // Delete release branch
-            yield this.github.delete(branches.current);
             // Create tag
             yield this.createTag({ branches, prefixes, sha });
             // Create GitHub release
             yield this.createGitHubRelease(version, projectName);
+            // Delete release branch (after everything is done)
+            yield this.github.delete(branches.current);
             return sha;
         });
     }
