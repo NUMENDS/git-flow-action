@@ -54,14 +54,14 @@ export class Release implements GitFlowHandler {
         // Merge branches
         const sha = await this.merge(branches);
 
-        // Delete release branch
-        await this.github.delete(branches.current);
-
         // Create tag
         await this.createTag({ branches, prefixes, sha });
 
         // Create GitHub release
         await this.createGitHubRelease(version, projectName);
+
+        // Delete release branch (after everything is done)
+        await this.github.delete(branches.current);
 
         return sha;
     }
