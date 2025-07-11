@@ -32823,7 +32823,7 @@ class Release {
             // Update version files
             yield this.updateVersionFiles(branches, prefixes);
             // Build the project
-            yield this.buildProject(version, projectName);
+            yield this.buildProject(version, projectName, branches);
             // Create or update changelog
             yield this.createOrUpdateChangelog(version, branches.current);
             // Merge branches
@@ -32863,8 +32863,6 @@ class Release {
                 this.github.getCore().info(`Updating version files to: ${version}`);
                 // Update package.json
                 yield this.updatePackageJson(version, branches.current);
-                // Update mta.yaml (if exists)
-                yield this.updateMtaYaml(version, branches.current);
                 this.github.getCore().info('Version files updated successfully');
             }
             catch (error) {
@@ -32936,7 +32934,7 @@ class Release {
             }
         });
     }
-    buildProject(version, projectName) {
+    buildProject(version, projectName, branches) {
         return __awaiter(this, void 0, void 0, function* () {
             try {
                 this.github.getCore().info(`Building project for version ${version}`);
@@ -32968,6 +32966,8 @@ class Release {
                                 fs.renameSync(originalMtarFile, versionedMtarFile);
                                 this.github.getCore().info(`Renamed to ${projectName}-v${version}.mtar`);
                                 mtarFilePath = versionedMtarFile;
+                                // Update mta.yaml only after successful MTAR generation
+                                yield this.updateMtaYaml(version, branches.current);
                             }
                             else {
                                 throw new Error('MTA project detected but no MTAR files found in mta_archives ' +
