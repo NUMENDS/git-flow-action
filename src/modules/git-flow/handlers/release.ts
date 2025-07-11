@@ -46,7 +46,7 @@ export class Release implements GitFlowHandler {
         await this.updateVersionFiles(branches, prefixes);
 
         // Build the project
-        await this.buildProject(version, projectName);
+        await this.buildProject(version, projectName, branches);
 
         // Create or update changelog
         await this.createOrUpdateChangelog(version, branches.current);
@@ -101,9 +101,6 @@ export class Release implements GitFlowHandler {
 
             // Update package.json
             await this.updatePackageJson(version, branches.current);
-
-            // Update mta.yaml (if exists)
-            await this.updateMtaYaml(version, branches.current);
 
             this.github.getCore().info('Version files updated successfully');
         } catch (error) {
@@ -184,7 +181,11 @@ export class Release implements GitFlowHandler {
         }
     }
 
-    private async buildProject(version: string, projectName: string): Promise<void> {
+    private async buildProject(
+        version: string,
+        projectName: string,
+        branches: Branches,
+    ): Promise<void> {
         try {
             this.github.getCore().info(`Building project for version ${version}`);
 
@@ -230,6 +231,9 @@ export class Release implements GitFlowHandler {
                                 `Renamed to ${projectName}-v${version}.mtar`,
                             );
                             mtarFilePath = versionedMtarFile;
+
+                            // Update mta.yaml only after successful MTAR generation
+                            await this.updateMtaYaml(version, branches.current);
                         } else {
                             throw new Error(
                                 'MTA project detected but no MTAR files found in mta_archives ' +
@@ -296,6 +300,10 @@ export class Release implements GitFlowHandler {
             // Get PR information (if available from context)
             const prInfo = await this.getPRInfo(branch);
 
+            // Debug: Log PR info details
+            this.github.getCore().info(`PR Info Body length: ${prInfo.body.length}`);
+            this.github.getCore().info(`PR Info URL: ${prInfo.url}`);
+
             // Create new changelog entry
             const newEntry = `# V${version}
 
@@ -308,6 +316,9 @@ ${prInfo.url ? `[🔎 See PR](${prInfo.url})` : ''}
 ---
 
 `;
+
+            // Debug: Log changelog entry
+            this.github.getCore().info(`Changelog entry preview: ${newEntry.substring(0, 200)}...`);
 
             let existingContent = '';
             if (fs.existsSync(changelogPath)) {
@@ -458,13 +469,48 @@ ${prInfo.url ? `[🔎 See PR](${prInfo.url})` : ''}`,
                 if (prs.data && prs.data.length > 0) {
                     const pr = prs.data[0];
                     this.github.getCore().info(`✅ Found PR #${pr.number}: ${pr.title}`);
+
+                    // Debug: Log PR details
+                    this.github.getCore().info(`PR Body length: ${pr.body?.length || 0}`);
+                    const bodyPreview = pr.body?.substring(0, 100) || 'No body content';
+                    this.github.getCore().info(`PR Body preview: ${bodyPreview}`);
+
+                    // Get detailed PR information
+                    const detailedPr = await instance.pulls.get({
+                        ...context.repo,
+                        pull_number: pr.number,
+                    });
+
+                    const detailedBodyLength = detailedPr.data.body?.length || 0;
+                    this.github.getCore().info(`Detailed PR Body length: ${detailedBodyLength}`);
+
+                    // Create enhanced body content
+                    let enhancedBody = detailedPr.data.body || pr.body || '';
+
+                    // If no body content, create a meaningful description
+                    if (!enhancedBody.trim()) {
+                        const title = detailedPr.data.title || pr.title;
+                        const changedFiles = detailedPr.data.changed_files || 'Unknown';
+                        const commits = detailedPr.data.commits || 'Multiple';
+                        enhancedBody = `**${title}**
+
+This release includes changes from PR #${pr.number}.
+
+**Changed files:** ${changedFiles} files modified
+**Commits:** ${commits} commits included
+
+For detailed information, please check the pull request.`;
+                    }
+
                     return {
-                        body: pr.body || '',
+                        body: enhancedBody,
                         url: pr.html_url,
                     };
                 }
             } catch (error) {
-                // Continue to next format
+                this.github.getCore().info(
+                    `Error searching with format '${branchFormat}': ${error}`,
+                );
                 continue;
             }
         }

@@ -32823,7 +32823,7 @@ class Release {
             // Update version files
             yield this.updateVersionFiles(branches, prefixes);
             // Build the project
-            yield this.buildProject(version, projectName);
+            yield this.buildProject(version, projectName, branches);
             // Create or update changelog
             yield this.createOrUpdateChangelog(version, branches.current);
             // Merge branches
@@ -32863,8 +32863,6 @@ class Release {
                 this.github.getCore().info(`Updating version files to: ${version}`);
                 // Update package.json
                 yield this.updatePackageJson(version, branches.current);
-                // Update mta.yaml (if exists)
-                yield this.updateMtaYaml(version, branches.current);
                 this.github.getCore().info('Version files updated successfully');
             }
             catch (error) {
@@ -32936,7 +32934,7 @@ class Release {
             }
         });
     }
-    buildProject(version, projectName) {
+    buildProject(version, projectName, branches) {
         return __awaiter(this, void 0, void 0, function* () {
             try {
                 this.github.getCore().info(`Building project for version ${version}`);
@@ -32968,6 +32966,8 @@ class Release {
                                 fs.renameSync(originalMtarFile, versionedMtarFile);
                                 this.github.getCore().info(`Renamed to ${projectName}-v${version}.mtar`);
                                 mtarFilePath = versionedMtarFile;
+                                // Update mta.yaml only after successful MTAR generation
+                                yield this.updateMtaYaml(version, branches.current);
                             }
                             else {
                                 throw new Error('MTA project detected but no MTAR files found in mta_archives ' +
@@ -33025,6 +33025,9 @@ class Release {
                 const changelogPath = path.join(process.cwd(), 'CHANGELOG.md');
                 // Get PR information (if available from context)
                 const prInfo = yield this.getPRInfo(branch);
+                // Debug: Log PR info details
+                this.github.getCore().info(`PR Info Body length: ${prInfo.body.length}`);
+                this.github.getCore().info(`PR Info URL: ${prInfo.url}`);
                 // Create new changelog entry
                 const newEntry = `# V${version}
 
@@ -33037,6 +33040,8 @@ ${prInfo.url ? `[🔎 See PR](${prInfo.url})` : ''}
 ---
 
 `;
+                // Debug: Log changelog entry
+                this.github.getCore().info(`Changelog entry preview: ${newEntry.substring(0, 200)}...`);
                 let existingContent = '';
                 if (fs.existsSync(changelogPath)) {
                     existingContent = fs.readFileSync(changelogPath, 'utf8');
@@ -33134,6 +33139,7 @@ ${prInfo.url ? `[🔎 See PR](${prInfo.url})` : ''}`, draft: false, prerelease: 
         });
     }
     getPRInfo(branch) {
+        var _a, _b, _c;
         return __awaiter(this, void 0, void 0, function* () {
             const instance = this.github.getOctokitInstance();
             const context = this.github.client.context;
@@ -33150,14 +33156,38 @@ ${prInfo.url ? `[🔎 See PR](${prInfo.url})` : ''}`, draft: false, prerelease: 
                     if (prs.data && prs.data.length > 0) {
                         const pr = prs.data[0];
                         this.github.getCore().info(`✅ Found PR #${pr.number}: ${pr.title}`);
+                        // Debug: Log PR details
+                        this.github.getCore().info(`PR Body length: ${((_a = pr.body) === null || _a === void 0 ? void 0 : _a.length) || 0}`);
+                        const bodyPreview = ((_b = pr.body) === null || _b === void 0 ? void 0 : _b.substring(0, 100)) || 'No body content';
+                        this.github.getCore().info(`PR Body preview: ${bodyPreview}`);
+                        // Get detailed PR information
+                        const detailedPr = yield instance.pulls.get(Object.assign(Object.assign({}, context.repo), { pull_number: pr.number }));
+                        const detailedBodyLength = ((_c = detailedPr.data.body) === null || _c === void 0 ? void 0 : _c.length) || 0;
+                        this.github.getCore().info(`Detailed PR Body length: ${detailedBodyLength}`);
+                        // Create enhanced body content
+                        let enhancedBody = detailedPr.data.body || pr.body || '';
+                        // If no body content, create a meaningful description
+                        if (!enhancedBody.trim()) {
+                            const title = detailedPr.data.title || pr.title;
+                            const changedFiles = detailedPr.data.changed_files || 'Unknown';
+                            const commits = detailedPr.data.commits || 'Multiple';
+                            enhancedBody = `**${title}**
+
+This release includes changes from PR #${pr.number}.
+
+**Changed files:** ${changedFiles} files modified
+**Commits:** ${commits} commits included
+
+For detailed information, please check the pull request.`;
+                        }
                         return {
-                            body: pr.body || '',
+                            body: enhancedBody,
                             url: pr.html_url,
                         };
                     }
                 }
                 catch (error) {
-                    // Continue to next format
+                    this.github.getCore().info(`Error searching with format '${branchFormat}': ${error}`);
                     continue;
                 }
             }
