@@ -45,9 +45,6 @@ export class Release implements GitFlowHandler {
         // Update version files
         await this.updateVersionFiles(branches, prefixes);
 
-        // Build the project
-        await this.buildProject(version, projectName, branches);
-
         // Create or update changelog
         await this.createOrUpdateChangelog(version, branches.current);
 
@@ -56,6 +53,9 @@ export class Release implements GitFlowHandler {
 
         // Create tag
         await this.createTag({ branches, prefixes, sha });
+
+        // Build the project
+        await this.buildProject(version, projectName, branches);
 
         // Create GitHub release
         await this.createGitHubRelease(version, projectName);
@@ -101,6 +101,9 @@ export class Release implements GitFlowHandler {
 
             // Update package.json
             await this.updatePackageJson(version, branches.current);
+
+            // Update mta.yaml if it exists (before building)
+            await this.updateMtaYaml(version, branches.current);
 
             this.github.getCore().info('Version files updated successfully');
         } catch (error) {
@@ -212,7 +215,7 @@ export class Release implements GitFlowHandler {
                     if (fs.existsSync(mtarArchivesPath)) {
                         // Look for any .mtar file in the directory
                         const mtarFiles = fs.readdirSync(mtarArchivesPath)
-                            .filter(file => file.endsWith('.mtar'));
+                            .filter((file: string) => file.endsWith('.mtar'));
 
                         if (mtarFiles.length > 0) {
                             this.github.getCore().info('MTAR file found! Processing...');
@@ -231,9 +234,6 @@ export class Release implements GitFlowHandler {
                                 `Renamed to ${projectName}-v${version}.mtar`,
                             );
                             mtarFilePath = versionedMtarFile;
-
-                            // Update mta.yaml only after successful MTAR generation
-                            await this.updateMtaYaml(version, branches.current);
                         } else {
                             throw new Error(
                                 'MTA project detected but no MTAR files found in mta_archives ' +
@@ -295,8 +295,6 @@ export class Release implements GitFlowHandler {
         try {
             this.github.getCore().info(`Creating/updating changelog for version ${version}`);
 
-            const changelogPath = path.join(process.cwd(), 'CHANGELOG.md');
-
             // Get PR information (if available from context)
             const prInfo = await this.getPRInfo(branch);
 
@@ -320,9 +318,16 @@ ${prInfo.url ? `[🔎 See PR](${prInfo.url})` : ''}
             // Debug: Log changelog entry
             this.github.getCore().info(`Changelog entry preview: ${newEntry.substring(0, 200)}...`);
 
+            // Get existing changelog content from remote repository
             let existingContent = '';
-            if (fs.existsSync(changelogPath)) {
-                existingContent = fs.readFileSync(changelogPath, 'utf8');
+            try {
+                existingContent = await this.github.getFileContent('CHANGELOG.md', branch);
+                this.github.getCore().info('Found existing CHANGELOG.md in repository');
+            } catch (error) {
+                this.github.getCore().info(
+                    'CHANGELOG.md not found in repository, creating new one',
+                );
+                existingContent = '';
             }
 
             // Create new changelog content
@@ -347,26 +352,32 @@ All notable changes to this project will be documented in this file.
 ${newEntry}${existingContent}`;
             }
 
-            // Write updated changelog
-            fs.writeFileSync(changelogPath, newContent, 'utf8');
-
-            // Commit changelog if we're in a git repository
-            if (fs.existsSync('.git')) {
+            // Update changelog using GitHub API (same approach as other files)
+            try {
+                // Get current file SHA for updating (if file exists)
+                let fileSha = '';
                 try {
-                    // Configure git user for GitHub Actions
-                    execSync('git config user.name "GitHub Actions"', { stdio: 'inherit' });
-                    execSync('git config user.email "actions@github.com"', { stdio: 'inherit' });
-
-                    execSync('git add CHANGELOG.md', { stdio: 'inherit' });
-                    execSync(`git commit -m "docs: update changelog for version ${version}"`,
-                        { stdio: 'inherit' });
-
-                    this.github.getCore().info('Changelog committed successfully');
-                } catch (commitError) {
-                    this.github.getCore().info(
-                        `Could not commit changelog: ${commitError}. Continuing...`,
-                    );
+                    fileSha = await this.getFileSha('CHANGELOG.md', branch);
+                    this.github.getCore().info('Updating existing CHANGELOG.md');
+                } catch (error) {
+                    this.github.getCore().info('Creating new CHANGELOG.md');
+                    // File doesn't exist, fileSha will remain empty for new file creation
                 }
+
+                await this.github.updateFile(
+                    'CHANGELOG.md',
+                    newContent,
+                    `docs: update changelog for version ${version}`,
+                    branch,
+                    fileSha,
+                );
+
+                this.github.getCore().info('Changelog committed successfully via GitHub API');
+            } catch (commitError) {
+                this.github.getCore().info(
+                    `Could not commit changelog via GitHub API: ${commitError}. Continuing...`,
+                );
+                throw commitError;
             }
 
             this.github.getCore().info('Changelog updated successfully');
