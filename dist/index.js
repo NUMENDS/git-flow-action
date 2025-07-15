@@ -32496,7 +32496,7 @@ class GitHubService {
             try {
                 const response = yield instance.repos.getContent(Object.assign(Object.assign({}, this.client.context.repo), { path: filePath, ref: branch }));
                 if ('content' in response.data) {
-                    return atob(response.data.content);
+                    return Buffer.from(response.data.content, 'base64').toString('utf8');
                 }
                 throw new Error(`File ${filePath} not found or is not a file`);
             }
@@ -32510,7 +32510,7 @@ class GitHubService {
         return __awaiter(this, void 0, void 0, function* () {
             const instance = this.getOctokitInstance();
             try {
-                yield instance.repos.createOrUpdateFileContents(Object.assign(Object.assign({}, this.client.context.repo), { path: filePath, message, content: btoa(content), branch,
+                yield instance.repos.createOrUpdateFileContents(Object.assign(Object.assign({}, this.client.context.repo), { path: filePath, message, content: Buffer.from(content, 'utf8').toString('base64'), branch,
                     sha }));
                 this.core.info(`Successfully updated ${filePath}`);
             }
@@ -32822,14 +32822,14 @@ class Release {
             }
             // Update version files
             yield this.updateVersionFiles(branches, prefixes);
-            // Build the project
-            yield this.buildProject(version, projectName, branches);
             // Create or update changelog
             yield this.createOrUpdateChangelog(version, branches.current);
             // Merge branches
             const sha = yield this.merge(branches);
             // Create tag
             yield this.createTag({ branches, prefixes, sha });
+            // Build the project
+            yield this.buildProject(version, projectName, branches);
             // Create GitHub release
             yield this.createGitHubRelease(version, projectName);
             // Delete release branch (after everything is done)
@@ -32863,6 +32863,8 @@ class Release {
                 this.github.getCore().info(`Updating version files to: ${version}`);
                 // Update package.json
                 yield this.updatePackageJson(version, branches.current);
+                // Update mta.yaml if it exists (before building)
+                yield this.updateMtaYaml(version, branches.current);
                 this.github.getCore().info('Version files updated successfully');
             }
             catch (error) {
@@ -32956,7 +32958,7 @@ class Release {
                         if (fs.existsSync(mtarArchivesPath)) {
                             // Look for any .mtar file in the directory
                             const mtarFiles = fs.readdirSync(mtarArchivesPath)
-                                .filter(file => file.endsWith('.mtar'));
+                                .filter((file) => file.endsWith('.mtar'));
                             if (mtarFiles.length > 0) {
                                 this.github.getCore().info('MTAR file found! Processing...');
                                 // Use the first .mtar file found
@@ -32966,8 +32968,6 @@ class Release {
                                 fs.renameSync(originalMtarFile, versionedMtarFile);
                                 this.github.getCore().info(`Renamed to ${projectName}-v${version}.mtar`);
                                 mtarFilePath = versionedMtarFile;
-                                // Update mta.yaml only after successful MTAR generation
-                                yield this.updateMtaYaml(version, branches.current);
                             }
                             else {
                                 throw new Error('MTA project detected but no MTAR files found in mta_archives ' +
@@ -33022,7 +33022,6 @@ class Release {
         return __awaiter(this, void 0, void 0, function* () {
             try {
                 this.github.getCore().info(`Creating/updating changelog for version ${version}`);
-                const changelogPath = path.join(process.cwd(), 'CHANGELOG.md');
                 // Get PR information (if available from context)
                 const prInfo = yield this.getPRInfo(branch);
                 // Debug: Log PR info details
@@ -33042,9 +33041,15 @@ ${prInfo.url ? `[🔎 See PR](${prInfo.url})` : ''}
 `;
                 // Debug: Log changelog entry
                 this.github.getCore().info(`Changelog entry preview: ${newEntry.substring(0, 200)}...`);
+                // Get existing changelog content from remote repository
                 let existingContent = '';
-                if (fs.existsSync(changelogPath)) {
-                    existingContent = fs.readFileSync(changelogPath, 'utf8');
+                try {
+                    existingContent = yield this.github.getFileContent('CHANGELOG.md', branch);
+                    this.github.getCore().info('Found existing CHANGELOG.md in repository');
+                }
+                catch (error) {
+                    this.github.getCore().info('CHANGELOG.md not found in repository, creating new one');
+                    existingContent = '';
                 }
                 // Create new changelog content
                 let newContent = '';
@@ -33064,21 +33069,24 @@ All notable changes to this project will be documented in this file.
 
 ${newEntry}${existingContent}`;
                 }
-                // Write updated changelog
-                fs.writeFileSync(changelogPath, newContent, 'utf8');
-                // Commit changelog if we're in a git repository
-                if (fs.existsSync('.git')) {
+                // Update changelog using GitHub API (same approach as other files)
+                try {
+                    // Get current file SHA for updating (if file exists)
+                    let fileSha = '';
                     try {
-                        // Configure git user for GitHub Actions
-                        child_process_1.execSync('git config user.name "GitHub Actions"', { stdio: 'inherit' });
-                        child_process_1.execSync('git config user.email "actions@github.com"', { stdio: 'inherit' });
-                        child_process_1.execSync('git add CHANGELOG.md', { stdio: 'inherit' });
-                        child_process_1.execSync(`git commit -m "docs: update changelog for version ${version}"`, { stdio: 'inherit' });
-                        this.github.getCore().info('Changelog committed successfully');
+                        fileSha = yield this.getFileSha('CHANGELOG.md', branch);
+                        this.github.getCore().info('Updating existing CHANGELOG.md');
                     }
-                    catch (commitError) {
-                        this.github.getCore().info(`Could not commit changelog: ${commitError}. Continuing...`);
+                    catch (error) {
+                        this.github.getCore().info('Creating new CHANGELOG.md');
+                        // File doesn't exist, fileSha will remain empty for new file creation
                     }
+                    yield this.github.updateFile('CHANGELOG.md', newContent, `docs: update changelog for version ${version}`, branch, fileSha);
+                    this.github.getCore().info('Changelog committed successfully via GitHub API');
+                }
+                catch (commitError) {
+                    this.github.getCore().info(`Could not commit changelog via GitHub API: ${commitError}. Continuing...`);
+                    throw commitError;
                 }
                 this.github.getCore().info('Changelog updated successfully');
             }
