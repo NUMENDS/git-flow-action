@@ -123,7 +123,7 @@ export class GitHubService implements GitHub {
             });
 
             if ('content' in response.data) {
-                return atob(response.data.content);
+                return Buffer.from(response.data.content, 'base64').toString('utf8');
             }
             throw new Error(`File ${filePath} not found or is not a file`);
         } catch (error) {
@@ -145,7 +145,7 @@ export class GitHubService implements GitHub {
                 ...this.client.context.repo,
                 path: filePath,
                 message,
-                content: btoa(content),
+                content: Buffer.from(content, 'utf8').toString('base64'),
                 branch,
                 sha,
             });
