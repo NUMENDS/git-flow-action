@@ -1,11 +1,11 @@
 import { GitFlowHandler } from '@/modules/git-flow/protocols';
 import { Branches, GitHub } from '@/infra/github/protocols';
 
-import { ChangelogService } from '@/modules/utils/changelog';
-import { ProjectManagerService } from '@/modules/utils/project-manager';
-import { VersionManagerService } from '@/modules/utils/version-manager';
-import { CreateReleaseService, ReleaseConfig } from '@/modules/utils/create-release';
-import { GitHubUtilsService } from '@/modules/utils/github';
+import { ChangelogService } from '@/modules/services/changelog';
+import { ProjectManagerService } from '@/modules/services/project-manager';
+import { VersionManagerService } from '@/modules/services/version-manager';
+import { CreateReleaseService, ReleaseConfig } from '@/modules/services/create-release';
+import { GitHubUtilsService } from '@/modules/services/github';
 
 export class Release implements GitFlowHandler {
     private readonly github: GitHub;

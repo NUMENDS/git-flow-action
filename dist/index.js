@@ -32769,11 +32769,11 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.Release = void 0;
-const changelog_1 = __nccwpck_require__(6974);
-const project_manager_1 = __nccwpck_require__(4610);
-const version_manager_1 = __nccwpck_require__(7810);
-const create_release_1 = __nccwpck_require__(1539);
-const github_1 = __nccwpck_require__(4907);
+const changelog_1 = __nccwpck_require__(4656);
+const project_manager_1 = __nccwpck_require__(6603);
+const version_manager_1 = __nccwpck_require__(2013);
+const create_release_1 = __nccwpck_require__(8578);
+const github_1 = __nccwpck_require__(3985);
 class Release {
     constructor(github) {
         this.github = github;
@@ -32860,7 +32860,7 @@ exports.GitFlowService = GitFlowService;
 
 /***/ }),
 
-/***/ 6974:
+/***/ 4656:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -32876,10 +32876,10 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.ChangelogService = void 0;
-const github_1 = __nccwpck_require__(4907);
+const github_1 = __nccwpck_require__(3985);
 const CHANGELOG_FILENAME = 'CHANGELOG.md';
 const CHANGELOG_HEADER = '# Changelog';
-const VERSION_PREFIX = '# V';
+const VERSION_PREFIX = '# v';
 const SEPARATOR = '---';
 const DEFAULT_RELEASE_MESSAGE = '- Release updates and improvements';
 class ChangelogService {
@@ -32906,16 +32906,7 @@ class ChangelogService {
     createChangelogEntry(version, prInfo) {
         const releaseContent = prInfo.body || DEFAULT_RELEASE_MESSAGE;
         const prLink = prInfo.url ? `[🔎 See PR](${prInfo.url})` : '';
-        return `${VERSION_PREFIX}${version}
-
-This release includes:
-
-${releaseContent}
-
-${prLink}
-
-${SEPARATOR}
-`;
+        return `${VERSION_PREFIX}${version}\n\n${releaseContent}\n\n${prLink}\n\n${SEPARATOR}`;
     }
     getExistingChangelogContent(branch) {
         return __awaiter(this, void 0, void 0, function* () {
@@ -33001,7 +32992,7 @@ exports.ChangelogService = ChangelogService;
 
 /***/ }),
 
-/***/ 1539:
+/***/ 8578:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -33038,7 +33029,7 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.CreateReleaseService = void 0;
 const fs = __importStar(__nccwpck_require__(7147));
 const path = __importStar(__nccwpck_require__(1017));
-const github_1 = __nccwpck_require__(4907);
+const github_1 = __nccwpck_require__(3985);
 const VERSION_TAG_PREFIX = 'v';
 const RELEASE_NAME_PREFIX = 'Release v';
 const ASSET_EXTENSIONS = {
@@ -33162,7 +33153,7 @@ exports.CreateReleaseService = CreateReleaseService;
 
 /***/ }),
 
-/***/ 4907:
+/***/ 3985:
 /***/ (function(__unused_webpack_module, exports) {
 
 "use strict";
@@ -33280,7 +33271,7 @@ exports.GitHubUtilsService = GitHubUtilsService;
 
 /***/ }),
 
-/***/ 4610:
+/***/ 6603:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -33318,7 +33309,7 @@ exports.ProjectManagerService = void 0;
 const fs = __importStar(__nccwpck_require__(7147));
 const path = __importStar(__nccwpck_require__(1017));
 const child_process_1 = __nccwpck_require__(2081);
-const github_1 = __nccwpck_require__(4907);
+const github_1 = __nccwpck_require__(3985);
 const DEFAULT_PROJECT_NAME = 'unknown-project';
 const PACKAGE_JSON_FILE = 'package.json';
 const PACKAGE_LOCK_FILE = 'package-lock.json';
@@ -33538,7 +33529,7 @@ exports.ProjectManagerService = ProjectManagerService;
 
 /***/ }),
 
-/***/ 7810:
+/***/ 2013:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
 "use strict";
@@ -33554,7 +33545,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.VersionManagerService = exports.VERSION_FILES = void 0;
-const github_1 = __nccwpck_require__(4907);
+const github_1 = __nccwpck_require__(3985);
 exports.VERSION_FILES = {
     PACKAGE_JSON: {
         name: 'package.json',

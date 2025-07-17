@@ -3,7 +3,7 @@ import * as path from 'path';
 import { execSync } from 'child_process';
 
 import { GitHub } from '@/infra/github/protocols';
-import { GitHubUtilsService } from '@/modules/utils/github';
+import { GitHubUtilsService } from '@/modules/services/github';
 
 const DEFAULT_PROJECT_NAME = 'unknown-project';
 const PACKAGE_JSON_FILE = 'package.json';

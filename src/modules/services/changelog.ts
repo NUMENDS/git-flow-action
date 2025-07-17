@@ -1,10 +1,10 @@
 import { GitHub } from '@/infra/github/protocols';
 
-import { GitHubUtilsService, PRInfo } from '@/modules/utils/github';
+import { GitHubUtilsService, PRInfo } from '@/modules/services/github';
 
 const CHANGELOG_FILENAME = 'CHANGELOG.md';
 const CHANGELOG_HEADER = '# Changelog';
-const VERSION_PREFIX = '# V';
+const VERSION_PREFIX = '# v';
 const SEPARATOR = '---';
 const DEFAULT_RELEASE_MESSAGE = '- Release updates and improvements';
 
@@ -47,16 +47,7 @@ export class ChangelogService implements ChangelogManager {
         const releaseContent = prInfo.body || DEFAULT_RELEASE_MESSAGE;
         const prLink = prInfo.url ? `[🔎 See PR](${prInfo.url})` : '';
 
-        return `${VERSION_PREFIX}${version}
-
-This release includes:
-
-${releaseContent}
-
-${prLink}
-
-${SEPARATOR}
-`;
+        return `${VERSION_PREFIX}${version}\n\n${releaseContent}\n\n${prLink}\n\n${SEPARATOR}`;
     }
 
     private async getExistingChangelogContent(branch: string): Promise<string> {

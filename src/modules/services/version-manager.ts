@@ -1,5 +1,5 @@
 import { Branches, GitHub } from '@/infra/github/protocols';
-import { GitHubUtilsService } from '@/modules/utils/github';
+import { GitHubUtilsService } from '@/modules/services/github';
 
 export const VERSION_FILES = {
     PACKAGE_JSON: {
