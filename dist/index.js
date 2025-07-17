@@ -33086,8 +33086,6 @@ class CreateReleaseService {
         const prLink = config.prUrl ? this.getPRLink(config.prUrl) : '';
         return `## 🚀 New Release v${config.version}
 
-This release includes:
-
 ${config.description || 'Release updates and improvements'}
 
 ## 📦 Assets
