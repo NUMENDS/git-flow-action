@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import { GitHub } from '@/infra/github/protocols';
-import { GitHubUtilsService, PRInfo } from '@/modules/utils/github';
+import { GitHubUtilsService, PRInfo } from '@/modules/services/github';
 
 const VERSION_TAG_PREFIX = 'v';
 const RELEASE_NAME_PREFIX = 'Release v';
