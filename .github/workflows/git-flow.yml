@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Run Git Flow
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v6
       - name: Run git flow process
         uses: ./
         id: git-flow
